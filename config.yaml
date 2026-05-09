@@ -1,0 +1,7 @@
+data:
+  seed: 42
+output:
+  figures_dir: images
+  figure_format: png
+  figure_dpi: 100
+  font_family: serif
