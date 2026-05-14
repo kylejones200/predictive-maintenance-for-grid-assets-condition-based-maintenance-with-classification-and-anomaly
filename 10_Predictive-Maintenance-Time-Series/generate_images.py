@@ -33,7 +33,7 @@ try:
 except ImportError:
     tf = None
 except Exception:
-    pass
+    tf = None
 
 # Tufte-style configuration
 plt.rcParams.update({
