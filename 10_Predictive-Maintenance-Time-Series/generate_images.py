@@ -32,7 +32,7 @@ try:
     tf.random.set_seed(42)
 except ImportError:
     tf = None
-except:
+except Exception:
     pass
 
 # Tufte-style configuration

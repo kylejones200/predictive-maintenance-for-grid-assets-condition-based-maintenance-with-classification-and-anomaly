@@ -1,7 +1,7 @@
 # Predictive Maintenance for Grid Assets Condition based maintenance with classification and anomaly
 
-**Published:** 2025-10-05
-**Medium:** [https://medium.com/@kyle-t-jones/predictive-maintenance-for-grid-assets-condition-based-maintenance-with-classification-and-anomaly-689ab3490a11](https://medium.com/@kyle-t-jones/predictive-maintenance-for-grid-assets-condition-based-maintenance-with-classification-and-anomaly-689ab3490a11)
+Published: 2025-10-05
+Medium: [https://medium.com/@kyle-t-jones/predictive-maintenance-for-grid-assets-condition-based-maintenance-with-classification-and-anomaly-689ab3490a11](https://medium.com/@kyle-t-jones/predictive-maintenance-for-grid-assets-condition-based-maintenance-with-classification-and-anomaly-689ab3490a11)
 
 ## About
 
