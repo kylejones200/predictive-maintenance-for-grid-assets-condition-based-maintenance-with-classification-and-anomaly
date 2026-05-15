@@ -5,6 +5,9 @@ Magics and shell lines are commented out. Run with a normal Python interpreter."
 
 # --- code cell ---
 
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 
 df = pd.read_csv("train_FD001.txt", sep=" ", header=None)
@@ -54,7 +57,7 @@ unit_df = df[df["unit"] == 1]
 sensor = "sensor_9"
 model = sm.tsa.ARIMA(unit_df[sensor], order=(1, 1, 1))
 fit = model.fit()
-forecast = fit.predict(start=1, end=len(unit_df), dynamic=False)
+forecast = _predict_torch(fit, start=1, end=len(unit_df), dynamic=False)
 residuals = unit_df[sensor].iloc[1:].values - forecast[1:]
 
 plt.plot(residuals)
@@ -82,6 +85,60 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
 
+class _LSTMForecaster(nn.Module):
+    """LSTM forecaster (auto-generated PyTorch replacement for Keras Sequential)."""
+    def __init__(self, n_features: int, hidden: int = 64, output_size: int = 1,
+                 n_layers: int = 3, dropout: float = 0.0):
+        super().__init__()
+        self.lstm = nn.LSTM(n_features, hidden, num_layers=n_layers,
+                            batch_first=True, dropout=dropout if n_layers > 1 else 0)
+        self.drop = nn.Dropout(dropout)
+        self.fc = nn.Linear(hidden, output_size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out, _ = self.lstm(x)
+        return self.fc(self.drop(out[:, -1, :]))
+
+def _train_torch(model: nn.Module, X_train, y_train, *,
+                 epochs: int = 50, batch_size: int = 32,
+                 lr: float = 0.001, validation_split: float = 0.2,
+                 patience: int = 15) -> nn.Module:
+    """Standard training loop replacing  + model.fit()."""
+    X_t = torch.FloatTensor(X_train)
+    y_t = torch.FloatTensor(y_train)
+    if y_t.dim() == 1:
+        y_t = y_t.unsqueeze(1)
+    n_val = max(1, int(len(X_t) * validation_split))
+    X_val, y_val = X_t[-n_val:], y_t[-n_val:]
+    X_tr, y_tr = X_t[:-n_val], y_t[:-n_val]
+    loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=batch_size, shuffle=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.MSELoss()
+    best, wait = float("inf"), 0
+    for _ in range(epochs):
+        model.train()
+        for xb, yb in loader:
+            optimizer.zero_grad()
+            criterion(model(xb), yb).backward()
+            optimizer.step()
+        model.eval()
+        with torch.no_grad():
+            val_loss = criterion(model(X_val), y_val).item()
+        if val_loss < best:
+            best, wait = val_loss, 0
+        else:
+            wait += 1
+            if wait >= patience:
+                break
+    return model
+
+
+def _predict_torch(model: nn.Module, X_test) -> "np.ndarray":
+    """Replace model.predict()."""
+    model.eval()
+    with torch.no_grad():
+        return model(torch.FloatTensor(X_test)).numpy()
+
 def make_sequences(df, sensor, window=20):
     sequences = []
     labels = []
@@ -100,14 +157,12 @@ X_train, X_test, y_train, y_test = train_test_split(
     X_seq, y_seq, test_size=0.2, random_state=42
 )
 clf = RandomForestClassifier(n_estimators=100)
-clf.fit(X_train, y_train)
+_train_torch(clf, X_train, y_train)
 print("Accuracy on test set:", clf.score(X_test, y_test))
 
 
 import numpy as np
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.layers import LSTM, Dense
-from tensorflow.keras.models import Sequential
 
 
 def make_lstm_sequences(df, sensor, window=30):
@@ -132,11 +187,8 @@ X_train, X_test, y_train, y_test = train_test_split(
 model = Sequential()
 model.add(LSTM(64, input_shape=(X_lstm.shape[1], 1)))
 model.add(Dense(1, activation="sigmoid"))
-model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model, X_train, y_train)
 
-import tensorflow as tf
-from tensorflow.keras.layers import Layer
 
 
 class Attention(Layer):
@@ -149,22 +201,19 @@ class Attention(Layer):
         )
 
     def call(self, inputs):
-        scores = tf.matmul(inputs, self.W)
-        weights = tf.nn.softmax(scores, axis=1)
-        output = tf.reduce_sum(inputs * weights, axis=1)
+        scores = torch.matmul(inputs, self.W)
+        weights = torch.softmax(scores, axis=1, dim=-1)
+        output = inputs * weights.sum(dim=1)
         return output
 
 
-from tensorflow.keras.layers import LSTM, Dense, Input
-from tensorflow.keras.models import Model
 
 input_seq = Input(shape=(X_lstm.shape[1], 1))
 x = LSTM(64, return_sequences=True)(input_seq)
 x = Attention()(x)
 output = Dense(1, activation="sigmoid")(x)
 model_attn = Model(inputs=input_seq, outputs=output)
-model_attn.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model_attn.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model_attn, X_train, y_train)
 
 
 # --- code cell ---
@@ -181,7 +230,7 @@ def make_unit_sequences(unit_data, sensor="sensor_15", window=30):
 
 
 X_unit = make_unit_sequences(unit_data)
-preds = model.predict(X_unit)
+preds = _predict_torch(model, X_unit)
 
 # Plot predictions across cycles
 import matplotlib.pyplot as plt
@@ -208,16 +257,14 @@ class AttentionWithWeights(Layer):
         )
 
     def call(self, inputs):
-        scores = tf.matmul(inputs, self.W)
-        weights = tf.nn.softmax(scores, axis=1)
-        output = tf.reduce_sum(inputs * weights, axis=1)
+        scores = torch.matmul(inputs, self.W)
+        weights = torch.softmax(scores, axis=1, dim=-1)
+        output = inputs * weights.sum(dim=1)
         return output, weights
 
 
 # --- code cell ---
 
-from tensorflow.keras.layers import LSTM, Dense, Input
-from tensorflow.keras.models import Model
 
 input_seq = Input(shape=(X_lstm.shape[1], 1))
 x = LSTM(64, return_sequences=True)(input_seq)
@@ -230,7 +277,7 @@ model_attn_vis = Model(inputs=input_seq, outputs=[output, attn_weights])
 # --- code cell ---
 
 sample = X_lstm[0:1]
-pred, attn = model_attn_vis.predict(sample)
+pred, attn = _predict_torch(model_attn_vis, sample)
 
 attn = attn[0].squeeze()  # shape: (window_size,)
 plt.figure(figsize=(10, 3))
@@ -264,7 +311,7 @@ for unit_id in tqdm(unit_ids):
     if len(unit_data) <= window:
         continue
     X_unit = make_unit_sequences(unit_data, sensor=sensor, window=window)
-    preds = model.predict(X_unit).flatten()
+    preds = _predict_torch(model, X_unit).flatten()
     if preds.size == 0:
         continue
     score = preds.max() - preds.min()
@@ -289,7 +336,7 @@ unit_id = top_units[0][0]  # or manually pick an interesting one
 unit_data = df[df["unit"] == unit_id].copy()
 
 X_unit = make_unit_sequences(unit_data, sensor=sensor, window=30)
-preds = model.predict(X_unit).flatten()
+preds = _predict_torch(model, X_unit).flatten()
 cycles = unit_data["time"].values[30:]
 
 plt.figure(figsize=(10, 4))
@@ -329,7 +376,7 @@ for unit_id in tqdm(unit_ids):
     X_unit = make_unit_sequences(unit_data, sensor=sensor, window=window)
     if X_unit.shape[0] == 0:
         continue
-    preds = model.predict(X_unit).flatten()
+    preds = _predict_torch(model, X_unit).flatten()
     # Look for units with meaningful prediction movement
     score = preds.max() - preds.min()
     if score > 0.05:
@@ -408,15 +455,12 @@ X_train, X_test, y_train, y_test = train_test_split(
     X_seq, y_seq, test_size=0.2, random_state=42
 )
 
-from tensorflow.keras.layers import LSTM, Dense
-from tensorflow.keras.models import Sequential
 
 model = Sequential()
 model.add(LSTM(64, input_shape=(X_train.shape[1], X_train.shape[2])))
 model.add(Dense(1, activation="sigmoid"))
-model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
 
-model.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model, X_train, y_train)
 
 
 # --- code cell ---
@@ -483,22 +527,16 @@ X_train, X_test, y_train, y_test = train_test_split(
 # --------------------------------------
 # Model 1: Plain Multivariate LSTM
 # --------------------------------------
-from tensorflow.keras.layers import LSTM, Dense
-from tensorflow.keras.models import Sequential
 
 model = Sequential()
 model.add(LSTM(64, input_shape=(X_train.shape[1], X_train.shape[2])))
 model.add(Dense(1, activation="sigmoid"))
 
-model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model, X_train, y_train)
 
 # --------------------------------------
 # Model 2: LSTM + Attention
 # --------------------------------------
-import tensorflow as tf
-from tensorflow.keras.layers import LSTM, Dense, Input, Layer
-from tensorflow.keras.models import Model
 
 
 class Attention(Layer):
@@ -511,9 +549,9 @@ class Attention(Layer):
         )
 
     def call(self, inputs):
-        scores = tf.matmul(inputs, self.W)
-        weights = tf.nn.softmax(scores, axis=1)
-        context = tf.reduce_sum(inputs * weights, axis=1)
+        scores = torch.matmul(inputs, self.W)
+        weights = torch.softmax(scores, axis=1, dim=-1)
+        context = inputs * weights.sum(dim=1)
         return context
 
 
@@ -523,8 +561,7 @@ x = Attention()(x)
 output = Dense(1, activation="sigmoid")(x)
 
 model_attn = Model(inputs=input_seq, outputs=output)
-model_attn.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model_attn.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model_attn, X_train, y_train)
 
 
 # --------------------------------------
@@ -535,7 +572,7 @@ def predict_and_plot(model, unit_id=3, window=30):
     values = unit_data[selected_sensors].values
     sequences = [values[i : i + window] for i in range(len(values) - window)]
     X_unit = np.array(sequences)
-    preds = model.predict(X_unit).flatten()
+    preds = _predict_torch(model, X_unit).flatten()
     cycles = unit_data["time"].values[window:]
 
     plt.figure(figsize=(10, 4))
@@ -627,15 +664,12 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 # 7. LSTM model using PCA factors
-from tensorflow.keras.layers import LSTM, Dense
-from tensorflow.keras.models import Sequential
 
 model = Sequential()
 model.add(LSTM(64, input_shape=(X_train.shape[1], X_train.shape[2])))
 model.add(Dense(1, activation="sigmoid"))
 
-model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model, X_train, y_train)
 
 
 # 8. Predict for one engine and plot distress over time
@@ -644,7 +678,7 @@ def predict_and_plot(model, unit_id=3, window=30):
     values = unit_data[pca_columns].values
     sequences = [values[i : i + window] for i in range(len(values) - window)]
     X_unit = np.array(sequences)
-    preds = model.predict(X_unit).flatten()
+    preds = _predict_torch(model, X_unit).flatten()
     cycles = unit_data["time"].values[window:]
 
     plt.figure(figsize=(10, 4))
@@ -665,9 +699,6 @@ predict_and_plot(model, unit_id=3)
 
 import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.layers import LSTM, Dense, Input, Layer
-from tensorflow.keras.models import Model
 
 
 # Define Attention layer that returns both context and weights
@@ -678,9 +709,9 @@ class AttentionWithWeights(Layer):
         )
 
     def call(self, inputs):
-        scores = tf.matmul(inputs, self.W)
-        weights = tf.nn.softmax(scores, axis=1)
-        output = tf.reduce_sum(inputs * weights, axis=1)
+        scores = torch.matmul(inputs, self.W)
+        weights = torch.softmax(scores, axis=1, dim=-1)
+        output = inputs * weights.sum(dim=1)
         return output, weights
 
 
@@ -691,12 +722,9 @@ context, attn_weights = AttentionWithWeights()(x)
 output = Dense(1, activation="sigmoid")(context)
 
 model_attn_vis = Model(inputs=input_seq, outputs=[output, attn_weights])
-model_attn_vis.compile(
-    optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
-)
 
 # Train the attention model
-model_attn_vis.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model_attn_vis, X_train, y_train)
 
 # Choose one example to visualize attention (e.g. from engine 3)
 unit_id = 3
@@ -708,7 +736,7 @@ X_unit = np.array(sequences)
 
 # Predict and get attention weights
 sample = X_unit[0:1]
-pred, attn = model_attn_vis.predict(sample)
+pred, attn = _predict_torch(model_attn_vis, sample)
 attn = attn[0].squeeze()
 
 # Plot attention weights
@@ -745,16 +773,13 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 
-from tensorflow.keras.layers import LSTM, Dense
-from tensorflow.keras.models import Sequential
 
 # Basic LSTM model
 model_plain = Sequential()
 model_plain.add(LSTM(64, input_shape=(X.shape[1], X.shape[2])))
 model_plain.add(Dense(1, activation="sigmoid"))
 
-model_plain.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model_plain.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model_plain, X_train, y_train)
 
 # Predict for engine 3
 unit_id = 3
@@ -768,7 +793,7 @@ X_engine = np.array(
 )
 cycles = engine_data["time"].values[window:]
 
-preds_plain = model_plain.predict(X_engine).flatten()
+preds_plain = _predict_torch(model_plain, X_engine).flatten()
 
 # Plot without attention
 plt.figure(figsize=(10, 4))
@@ -792,13 +817,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-import tensorflow as tf
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.layers import LSTM, Dense, Input, Layer
-from tensorflow.keras.models import Model, Sequential
 
 # -----------------------------
 # Load and preprocess data
@@ -861,7 +883,7 @@ plt.close()
 unit_df = df[df["unit"] == 1]
 model = sm.tsa.ARIMA(unit_df["pca_1"], order=(1, 1, 1))
 fit = model.fit()
-forecast = fit.predict(start=1, end=len(unit_df), dynamic=False)
+forecast = _predict_torch(fit, start=1, end=len(unit_df), dynamic=False)
 residuals = unit_df["pca_1"].iloc[1:].values - forecast[1:]
 
 plt.figure(figsize=(8, 4))
@@ -906,7 +928,7 @@ X_train_rf, X_test_rf, y_train_rf, y_test_rf = train_test_split(
     X_seq, y_seq, test_size=0.2, random_state=42
 )
 rf_clf = RandomForestClassifier(n_estimators=100)
-rf_clf.fit(X_train_rf, y_train_rf)
+_train_torch(rf_clf, X_train_rf, y_train_rf)
 
 
 # -----------------------------
@@ -933,8 +955,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 model_lstm = Sequential()
 model_lstm.add(LSTM(64, input_shape=(X.shape[1], X.shape[2])))
 model_lstm.add(Dense(1, activation="sigmoid"))
-model_lstm.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model_lstm.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model_lstm, X_train, y_train)
 
 
 # -----------------------------
@@ -947,9 +968,9 @@ class AttentionWithWeights(Layer):
         )
 
     def call(self, inputs):
-        scores = tf.matmul(inputs, self.W)
-        weights = tf.nn.softmax(scores, axis=1)
-        context = tf.reduce_sum(inputs * weights, axis=1)
+        scores = torch.matmul(inputs, self.W)
+        weights = torch.softmax(scores, axis=1, dim=-1)
+        context = inputs * weights.sum(dim=1)
         return context, weights
 
 
@@ -959,8 +980,7 @@ context, attn_weights = AttentionWithWeights()(x)
 output = Dense(1, activation="sigmoid")(context)
 
 model_attn = Model(inputs=input_seq, outputs=[output, attn_weights])
-model_attn.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model_attn.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model_attn, X_train, y_train)
 
 print("Training complete. All models and visualizations are ready.")
 
@@ -973,13 +993,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-import tensorflow as tf
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.layers import LSTM, Dense, Input, Layer
-from tensorflow.keras.models import Model, Sequential
 
 # -----------------------------
 # Load and preprocess data
@@ -1042,7 +1059,7 @@ plt.close()
 unit_df = df[df["unit"] == 1]
 model = sm.tsa.ARIMA(unit_df["pca_1"], order=(1, 1, 1))
 fit = model.fit()
-forecast = fit.predict(start=1, end=len(unit_df), dynamic=False)
+forecast = _predict_torch(fit, start=1, end=len(unit_df), dynamic=False)
 residuals = unit_df["pca_1"].iloc[1:].values - forecast[1:]
 
 plt.figure(figsize=(8, 4))
@@ -1087,7 +1104,7 @@ X_train_rf, X_test_rf, y_train_rf, y_test_rf = train_test_split(
     X_seq, y_seq, test_size=0.2, random_state=42
 )
 rf_clf = RandomForestClassifier(n_estimators=100)
-rf_clf.fit(X_train_rf, y_train_rf)
+_train_torch(rf_clf, X_train_rf, y_train_rf)
 
 # Visualization of prediction probabilities
 y_pred_rf = rf_clf.predict_proba(X_test_rf)[:, 1]
@@ -1124,10 +1141,9 @@ X_train, X_test, y_train, y_test = train_test_split(
 model_lstm = Sequential()
 model_lstm.add(LSTM(64, input_shape=(X.shape[1], X.shape[2])))
 model_lstm.add(Dense(1, activation="sigmoid"))
-model_lstm.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model_lstm.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model_lstm, X_train, y_train)
 
-pred_lstm = model_lstm.predict(X_test).flatten()
+pred_lstm = _predict_torch(model_lstm, X_test).flatten()
 plt.figure(figsize=(8, 4))
 plt.plot(pred_lstm, alpha=0.8)
 plt.title("LSTM Distress Predictions")
@@ -1147,9 +1163,9 @@ class AttentionWithWeights(Layer):
         )
 
     def call(self, inputs):
-        scores = tf.matmul(inputs, self.W)
-        weights = tf.nn.softmax(scores, axis=1)
-        context = tf.reduce_sum(inputs * weights, axis=1)
+        scores = torch.matmul(inputs, self.W)
+        weights = torch.softmax(scores, axis=1, dim=-1)
+        context = inputs * weights.sum(dim=1)
         return context, weights
 
 
@@ -1158,16 +1174,11 @@ x = LSTM(64, return_sequences=True)(input_seq)
 context, attn_weights = AttentionWithWeights()(x)
 output = Dense(1, activation="sigmoid", name="pred")(context)
 model_attn = Model(inputs=input_seq, outputs={"pred": output, "attn": attn_weights})
-model_attn.compile(
-    optimizer="adam", loss={"pred": "binary_crossentropy"}, metrics={"pred": "accuracy"}
-)
 
-model_attn.fit(
-    X_train, {"pred": y_train}, epochs=10, batch_size=32, validation_split=0.1
-)
+_train_torch(model_attn, X_train, {"pred": y_train})
 
 # Predict
-pred_dict = model_attn.predict(X_test)
+pred_dict = _predict_torch(model_attn, X_test)
 pred_attn = pred_dict["pred"]
 attn = pred_dict["attn"]
 
@@ -1195,10 +1206,10 @@ X_unit = np.array(
 cycles = unit_data["time"].values[30:]
 
 # For plain LSTM
-preds_plain = model_lstm.predict(X_unit).flatten()
+preds_plain = _predict_torch(model_lstm, X_unit).flatten()
 
 # For attention model
-preds_dict = model_attn.predict(X_unit)
+preds_dict = _predict_torch(model_attn, X_unit)
 preds_attn = preds_dict["pred"].flatten()
 
 
@@ -1255,13 +1266,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-import tensorflow as tf
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.layers import LSTM, Dense, Input, Layer
-from tensorflow.keras.models import Model, Sequential
 
 # Custom minimalist plot style
 plt.rcParams.update(
@@ -1342,7 +1350,7 @@ plt.close()
 unit_df = df[df["unit"] == 1]
 model = sm.tsa.ARIMA(unit_df["pca_1"], order=(1, 1, 1))
 fit = model.fit()
-forecast = fit.predict(start=1, end=len(unit_df), dynamic=False)
+forecast = _predict_torch(fit, start=1, end=len(unit_df), dynamic=False)
 residuals = unit_df["pca_1"].iloc[1:].values - forecast[1:]
 
 plt.figure(figsize=(8, 4))
@@ -1387,7 +1395,7 @@ X_train_rf, X_test_rf, y_train_rf, y_test_rf = train_test_split(
     X_seq, y_seq, test_size=0.2, random_state=42
 )
 rf_clf = RandomForestClassifier(n_estimators=100)
-rf_clf.fit(X_train_rf, y_train_rf)
+_train_torch(rf_clf, X_train_rf, y_train_rf)
 
 # Visualization of prediction probabilities
 y_pred_rf = rf_clf.predict_proba(X_test_rf)[:, 1]
@@ -1424,10 +1432,9 @@ X_train, X_test, y_train, y_test = train_test_split(
 model_lstm = Sequential()
 model_lstm.add(LSTM(64, input_shape=(X.shape[1], X.shape[2])))
 model_lstm.add(Dense(1, activation="sigmoid"))
-model_lstm.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-model_lstm.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+_train_torch(model_lstm, X_train, y_train)
 
-pred_lstm = model_lstm.predict(X_test).flatten()
+pred_lstm = _predict_torch(model_lstm, X_test).flatten()
 plt.figure(figsize=(8, 4))
 plt.plot(pred_lstm, alpha=0.8)
 plt.title("LSTM Distress Predictions")
@@ -1447,9 +1454,9 @@ class AttentionWithWeights(Layer):
         )
 
     def call(self, inputs):
-        scores = tf.matmul(inputs, self.W)
-        weights = tf.nn.softmax(scores, axis=1)
-        context = tf.reduce_sum(inputs * weights, axis=1)
+        scores = torch.matmul(inputs, self.W)
+        weights = torch.softmax(scores, axis=1, dim=-1)
+        context = inputs * weights.sum(dim=1)
         return context, weights
 
 
@@ -1458,13 +1465,8 @@ x = LSTM(64, return_sequences=True)(input_seq)
 context, attn_weights = AttentionWithWeights()(x)
 output = Dense(1, activation="sigmoid", name="pred")(context)
 model_attn = Model(inputs=input_seq, outputs={"pred": output, "attn": attn_weights})
-model_attn.compile(
-    optimizer="adam", loss={"pred": "binary_crossentropy"}, metrics={"pred": "accuracy"}
-)
 
-model_attn.fit(
-    X_train, {"pred": y_train}, epochs=10, batch_size=32, validation_split=0.1
-)
+_train_torch(model_attn, X_train, {"pred": y_train})
 
 
 # Predict and compare for a specific engine
@@ -1480,10 +1482,10 @@ X_engine = np.array(
 cycles = engine_data["time"].values[window:]
 
 # LSTM prediction
-pred_lstm_engine = model_lstm.predict(X_engine).flatten()
+pred_lstm_engine = _predict_torch(model_lstm, X_engine).flatten()
 
 # LSTM + Attention prediction
-pred_dict = model_attn.predict(X_engine)
+pred_dict = _predict_torch(model_attn, X_engine)
 pred_attn_engine = pred_dict["pred"].flatten()
 
 # Plot LSTM only
@@ -1555,14 +1557,12 @@ class AttentionWithWeights(Layer):
         )
 
     def call(self, inputs):
-        scores = tf.matmul(inputs, self.W)
-        weights = tf.nn.softmax(scores, axis=1)
-        output = tf.reduce_sum(inputs * weights, axis=1)
+        scores = torch.matmul(inputs, self.W)
+        weights = torch.softmax(scores, axis=1, dim=-1)
+        output = inputs * weights.sum(dim=1)
         return output, weights
 
 
-from tensorflow.keras.layers import LSTM, Dense, Input
-from tensorflow.keras.models import Model
 
 input_seq = Input(shape=(X_lstm.shape[1], 1))
 x = LSTM(64, return_sequences=True)(input_seq)
@@ -1570,7 +1570,7 @@ context, attn_weights = AttentionWithWeights()(x)
 output = Dense(1, activation="sigmoid")(context)
 model_attn_vis = Model(inputs=input_seq, outputs=[output, attn_weights])
 sample = X_lstm[0:1]
-pred, attn = model_attn_vis.predict(sample)
+pred, attn = _predict_torch(model_attn_vis, sample)
 attn = attn[0].squeeze()  # shape: (window_size,)
 plt.figure(figsize=(10, 3))
 plt.stem(range(len(attn)), attn)
