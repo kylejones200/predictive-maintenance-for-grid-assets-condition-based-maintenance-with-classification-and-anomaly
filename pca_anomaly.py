@@ -33,7 +33,9 @@ def _is_positive_definite(a: np.ndarray) -> bool:
         return False
 
 
-def compute_covariance_matrices(data: np.ndarray, verbose: bool = False) -> tuple[np.ndarray, np.ndarray]:
+def compute_covariance_matrices(
+    data: np.ndarray, verbose: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
     covariance_matrix = np.cov(data, rowvar=False)
     if not _is_positive_definite(covariance_matrix):
         raise RuntimeError("Covariance matrix is not positive definite.")
@@ -43,7 +45,9 @@ def compute_covariance_matrices(data: np.ndarray, verbose: bool = False) -> tupl
     return covariance_matrix, inv_covariance_matrix
 
 
-def mahalanobis_distances(inv_cov_matrix: np.ndarray, mean_distr: np.ndarray, data: np.ndarray) -> np.ndarray:
+def mahalanobis_distances(
+    inv_cov_matrix: np.ndarray, mean_distr: np.ndarray, data: np.ndarray
+) -> np.ndarray:
     diff = data - mean_distr
     return np.sqrt(np.einsum("ij,jk,ik->i", diff, inv_cov_matrix, diff))
 
@@ -127,7 +131,11 @@ def main() -> None:
     plt.show()
 
     anomaly_train = pd.DataFrame(
-        {"Mob dist": dist_train, "Thresh": threshold, "Anomaly": dist_train > threshold},
+        {
+            "Mob dist": dist_train,
+            "Thresh": threshold,
+            "Anomaly": dist_train > threshold,
+        },
         index=x_train_pca.index,
     )
     anomaly_test = pd.DataFrame(
@@ -138,7 +146,9 @@ def main() -> None:
 
     anomaly_alldata = pd.concat([anomaly_train, anomaly_test])
     anomaly_alldata.to_csv(root / "Anomaly_distance.csv")
-    anomaly_alldata.plot(logy=True, figsize=(10, 6), ylim=[1e-1, 1e3], color=["green", "red"])
+    anomaly_alldata.plot(
+        logy=True, figsize=(10, 6), ylim=[1e-1, 1e3], color=["green", "red"]
+    )
     plt.title("Mahalanobis anomaly scores")
     plt.tight_layout()
     plt.show()
@@ -182,7 +192,11 @@ def main() -> None:
     plt.tight_layout()
     plt.show()
 
-    x_pred_train = pd.DataFrame(model.predict(np.asarray(x_train), verbose=0), columns=x_train.columns, index=x_train.index)
+    x_pred_train = pd.DataFrame(
+        model.predict(np.asarray(x_train), verbose=0),
+        columns=x_train.columns,
+        index=x_train.index,
+    )
     scored_train = pd.DataFrame(index=x_train.index)
     scored_train["Loss_mae"] = np.mean(np.abs(x_pred_train - x_train), axis=1)
 
@@ -193,7 +207,11 @@ def main() -> None:
     plt.tight_layout()
     plt.show()
 
-    x_pred_test = pd.DataFrame(model.predict(np.asarray(x_test), verbose=0), columns=x_test.columns, index=x_test.index)
+    x_pred_test = pd.DataFrame(
+        model.predict(np.asarray(x_test), verbose=0),
+        columns=x_test.columns,
+        index=x_test.index,
+    )
     scored_test = pd.DataFrame(index=x_test.index)
     scored_test["Loss_mae"] = np.mean(np.abs(x_pred_test - x_test), axis=1)
     scored_test["Threshold"] = 0.3

@@ -1,22 +1,28 @@
-# Extracted code from '10_Predictive-Maintenance-Time-Series.md'
-# Blocks appear in the same order as in the markdown article.
 
-# Use energy production data as proxy for equipment health
-# Simulate sensor readings from production metrics
+def main():
+    # Extracted code from '10_Predictive-Maintenance-Time-Series.md'
+    # Blocks appear in the same order as in the markdown article.
 
-# Rolling statistics
-# Change detection
-# Frequency domain features
+    # Use energy production data as proxy for equipment health
+    # Simulate sensor readings from production metrics
 
-# Time-to-failure prediction
-# Remaining useful life (RUL) estimation
-# Classification: normal vs. failure
+    # Rolling statistics
+    # Change detection
+    # Frequency domain features
 
-# Threshold-based alerts
-# Anomaly detection integration
-# Escalation rules
+    # Time-to-failure prediction
+    # Remaining useful life (RUL) estimation
+    # Classification: normal vs. failure
 
-# Real-time data ingestion
-# Model inference
-# Alert generation
-# Dashboard visualization
+    # Threshold-based alerts
+    # Anomaly detection integration
+    # Escalation rules
+
+    # Real-time data ingestion
+    # Model inference
+    # Alert generation
+    # Dashboard visualization
+
+
+if __name__ == "__main__":
+    main()
