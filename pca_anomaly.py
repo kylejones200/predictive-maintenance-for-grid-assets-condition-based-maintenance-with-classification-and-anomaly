@@ -200,7 +200,7 @@ def main() -> None:
     )
     print(anomaly_test.head())
 
-    anomaly_alldata = pd.concat([anomaly_train, anomaly_test])
+    anomaly_alldata = anomaly_train.append(anomaly_test)
     anomaly_alldata.to_csv(root / "Anomaly_distance.csv")
     anomaly_alldata.plot(
         logy=True, figsize=(10, 6), ylim=[1e-1, 1e3], color=["green", "red"]
@@ -274,7 +274,7 @@ def main() -> None:
 
     scored_train["Threshold"] = 0.3
     scored_train["Anomaly"] = scored_train["Loss_mae"] > scored_train["Threshold"]
-    scored_ae = pd.concat([scored_train, scored_test])
+    scored_ae = scored_train.append(scored_test)
     scored_ae.plot(logy=True, figsize=(10, 6), ylim=[1e-2, 1e2], color=["blue", "red"])
     plt.title("Autoencoder reconstruction MAE vs threshold")
     plt.tight_layout()
