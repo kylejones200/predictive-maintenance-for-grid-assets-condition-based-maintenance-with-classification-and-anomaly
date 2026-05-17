@@ -2,26 +2,10 @@
 
 Magics and shell lines are commented out. Run with a normal Python interpreter."""
 
-
-# --- code cell ---
-
-# %pip install --quiet matplotlib torch torchvision scikit-learn mlflow  # Jupyter-only
-# --- code cell ---
 import matplotlib as mpl
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
-mpl.rcParams["font.family"] = "serif"
-mpl.rcParams["axes.spines.top"] = False
-mpl.rcParams["axes.spines.right"] = False
-mpl.rcParams["figure.dpi"] = 120
-
-
-# --- code cell ---
-
-X = torch.rand(100, 1, 16, 16)
-y = (X.mean(dim=(1, 2, 3)) > 0.5).long()
 
 
 class CNN(nn.Module):
@@ -35,10 +19,9 @@ class CNN(nn.Module):
         return self.net(x)
 
 
-
 def main():
     m = CNN()
-    opt = optim.Adam(m.parameters(), lr=1e-3)
+    opt = optim.Adam(m.parameters(), lr=0.001)
     loss_fn = nn.CrossEntropyLoss()
     for _ in range(10):
         opt.zero_grad()
@@ -48,6 +31,22 @@ def main():
         opt.step()
     acc = (m(X).argmax(1) == y).float().mean().item()
     print("Accuracy", round(acc, 2))
+
+
+def main() -> None:
+    mpl.rcParams["font.family"] = "serif"
+
+    mpl.rcParams["axes.spines.top"] = False
+
+    mpl.rcParams["axes.spines.right"] = False
+
+    mpl.rcParams["figure.dpi"] = 120
+
+    X = torch.rand(100, 1, 16, 16)
+
+    y = (X.mean(dim=(1, 2, 3)) > 0.5).long()
+
+    main()
 
 
 if __name__ == "__main__":
