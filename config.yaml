@@ -5,3 +5,7 @@ output:
   figure_format: png
   figure_dpi: 100
   font_family: serif
+cv:
+  n_splits: 5
+  strategy: time_series
+  gap: 0
