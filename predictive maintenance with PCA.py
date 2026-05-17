@@ -6,14 +6,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-import torch
-import torch.nn as nn
+import tensorflow as tf
 from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from torch.utils.data import DataLoader, TensorDataset
+from tensorflow.keras.layers import LSTM, Dense, Input, Layer
+from tensorflow.keras.models import Model, Sequential
 from tqdm import tqdm
 
 
@@ -27,9 +27,9 @@ class Attention(Layer):
         )
 
     def call(self, inputs):
-        scores = torch.matmul(inputs, self.W)
-        weights = torch.softmax(scores, axis=1, dim=-1)
-        context = inputs * weights.sum(dim=1)
+        scores = tf.matmul(inputs, self.W)
+        weights = tf.nn.softmax(scores, axis=1)
+        context = tf.reduce_sum(inputs * weights, axis=1)
         return context
 
 
@@ -40,85 +40,10 @@ class AttentionWithWeights(Layer):
         )
 
     def call(self, inputs):
-        scores = torch.matmul(inputs, self.W)
-        weights = torch.softmax(scores, axis=1, dim=-1)
-        output = inputs * weights.sum(dim=1)
+        scores = tf.matmul(inputs, self.W)
+        weights = tf.nn.softmax(scores, axis=1)
+        output = tf.reduce_sum(inputs * weights, axis=1)
         return (output, weights)
-
-
-class _LSTMForecaster(nn.Module):
-    """LSTM forecaster (auto-generated PyTorch replacement for Keras Sequential)."""
-
-    def __init__(
-        self,
-        n_features: int,
-        hidden: int = 64,
-        output_size: int = 1,
-        n_layers: int = 3,
-        dropout: float = 0.0,
-    ):
-        super().__init__()
-        self.lstm = nn.LSTM(
-            n_features,
-            hidden,
-            num_layers=n_layers,
-            batch_first=True,
-            dropout=dropout if n_layers > 1 else 0,
-        )
-        self.drop = nn.Dropout(dropout)
-        self.fc = nn.Linear(hidden, output_size)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out, _ = self.lstm(x)
-        return self.fc(self.drop(out[:, -1, :]))
-
-
-def _predict_torch(model: nn.Module, X_test) -> "np.ndarray":
-    """Replace model.predict()."""
-    model.eval()
-    with torch.no_grad():
-        return model(torch.FloatTensor(X_test)).numpy()
-
-
-def _train_torch(
-    model: nn.Module,
-    X_train,
-    y_train,
-    *,
-    epochs: int = 50,
-    batch_size: int = 32,
-    lr: float = 0.001,
-    validation_split: float = 0.2,
-    patience: int = 15,
-) -> nn.Module:
-    """Standard training loop replacing  + model.fit()."""
-    X_t = torch.FloatTensor(X_train)
-    y_t = torch.FloatTensor(y_train)
-    if y_t.dim() == 1:
-        y_t = y_t.unsqueeze(1)
-    n_val = max(1, int(len(X_t) * validation_split))
-    X_val, y_val = (X_t[-n_val:], y_t[-n_val:])
-    X_tr, y_tr = (X_t[:-n_val], y_t[:-n_val])
-    loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=batch_size, shuffle=True)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.MSELoss()
-    best, wait = (float("inf"), 0)
-    for _ in range(epochs):
-        model.train()
-        for xb, yb in loader:
-            optimizer.zero_grad()
-            criterion(model(xb), yb).backward()
-            optimizer.step()
-        model.eval()
-        with torch.no_grad():
-            val_loss = criterion(model(X_val), y_val).item()
-        if val_loss < best:
-            best, wait = (val_loss, 0)
-        else:
-            wait += 1
-            if wait >= patience:
-                break
-    return model
 
 
 def make_lstm_sequences(df, sensor, window=30):
@@ -194,7 +119,7 @@ def predict_and_plot(model, unit_id=3, window=30):
     values = unit_data[pca_columns].values
     sequences = [values[i : i + window] for i in range(len(values) - window)]
     X_unit = np.array(sequences)
-    preds = _predict_torch(model, X_unit).flatten()
+    preds = model.predict(X_unit).flatten()
     cycles = unit_data["time"].values[window:]
     plt.figure(figsize=(10, 4))
     plt.plot(cycles, preds, label="Predicted Distress Probability")
@@ -207,7 +132,7 @@ def predict_and_plot(model, unit_id=3, window=30):
     plt.show()
 
 
-def main() -> None:
+def we_define_the_first_30_cycles_of_every_engine_as() -> None:
     df = pd.read_csv("train_FD001.txt", sep=" ", header=None)
 
     df.dropna(axis=1, inplace=True)
@@ -268,7 +193,7 @@ def main() -> None:
 
     fit = model.fit()
 
-    forecast = _predict_torch(fit, start=1, end=len(unit_df), dynamic=False)
+    forecast = fit.predict(start=1, end=len(unit_df), dynamic=False)
 
     residuals = unit_df[sensor].iloc[1:].values - forecast[1:]
 
@@ -310,7 +235,7 @@ def main() -> None:
 
     clf = RandomForestClassifier(n_estimators=100)
 
-    _train_torch(clf, X_train, y_train)
+    clf.fit(X_train, y_train)
 
     print("Accuracy on test set:", clf.score(X_test, y_test))
 
@@ -328,7 +253,9 @@ def main() -> None:
 
     model.add(Dense(1, activation="sigmoid"))
 
-    _train_torch(model, X_train, y_train)
+    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
+
+    model.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
 
     input_seq = Input(shape=(X_lstm.shape[1], 1))
 
@@ -340,15 +267,21 @@ def main() -> None:
 
     model_attn = Model(inputs=input_seq, outputs=output)
 
-    _train_torch(model_attn, X_train, y_train)
+    model_attn.compile(
+        optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
+    )
 
+    model_attn.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+
+
+def rebuild_lstm_sequences_from_this_engine() -> None:
     unit_id = 3
 
     unit_data = df[df["unit"] == unit_id].copy()
 
     X_unit = make_unit_sequences(unit_data)
 
-    preds = _predict_torch(model, X_unit)
+    preds = model.predict(X_unit)
 
     cycles = unit_data["time"].values[30:]
 
@@ -370,6 +303,8 @@ def main() -> None:
 
     plt.show()
 
+
+def notebook_step_004() -> None:
     input_seq = Input(shape=(X_lstm.shape[1], 1))
 
     x = LSTM(64, return_sequences=True)(input_seq)
@@ -380,9 +315,11 @@ def main() -> None:
 
     model_attn_vis = Model(inputs=input_seq, outputs=[output, attn_weights])
 
+
+def notebook_step_005() -> None:
     sample = X_lstm[0:1]
 
-    pred, attn = _predict_torch(model_attn_vis, sample)
+    pred, attn = model_attn_vis.predict(sample)
 
     attn = attn[0].squeeze()
 
@@ -400,6 +337,8 @@ def main() -> None:
 
     plt.show()
 
+
+def notebook_step_006() -> None:
     interesting_units = []
 
     sensor = "sensor_15"
@@ -413,12 +352,14 @@ def main() -> None:
         if len(unit_data) <= window:
             continue
         X_unit = make_unit_sequences(unit_data, sensor=sensor, window=window)
-        preds = _predict_torch(model, X_unit).flatten()
+        preds = model.predict(X_unit).flatten()
         if preds.size == 0:
             continue
         score = preds.max() - preds.min()
         interesting_units.append((unit_id, score, preds.mean(), preds.std()))
 
+
+def sort_descending_by_prediction_range() -> None:
     interesting_units.sort(key=lambda x: x[1], reverse=True)
 
     top_units = interesting_units[:5]
@@ -426,13 +367,15 @@ def main() -> None:
     for unit_id, score, mean, std in top_units:
         print(f"Unit {unit_id} | Δ = {score:.3f} | μ = {mean:.3f} | σ = {std:.3f}")
 
+
+def notebook_step_008() -> None:
     unit_id = top_units[0][0]
 
     unit_data = df[df["unit"] == unit_id].copy()
 
     X_unit = make_unit_sequences(unit_data, sensor=sensor, window=30)
 
-    preds = _predict_torch(model, X_unit).flatten()
+    preds = model.predict(X_unit).flatten()
 
     cycles = unit_data["time"].values[30:]
 
@@ -454,6 +397,8 @@ def main() -> None:
 
     plt.show()
 
+
+def look_for_units_with_meaningful_prediction_moveme() -> None:
     sensor = "sensor_9"
 
     window = 30
@@ -467,13 +412,15 @@ def main() -> None:
         X_unit = make_unit_sequences(unit_data, sensor=sensor, window=window)
         if X_unit.shape[0] == 0:
             continue
-        preds = _predict_torch(model, X_unit).flatten()
+        preds = model.predict(X_unit).flatten()
         score = preds.max() - preds.min()
         if score > 0.05:
             dynamic_units.append((unit_id, score, preds))
 
     dynamic_units.sort(key=lambda x: x[1], reverse=True)
 
+
+def notebook_step_010() -> None:
     top_unit_id = dynamic_units[0][0]
 
     top_preds = dynamic_units[0][2]
@@ -500,6 +447,8 @@ def main() -> None:
 
     plt.show()
 
+
+def make_sure_you_re_only_looking_at_the_sensor_colu() -> None:
     sensor_cols = [col for col in df.columns if col.startswith("sensor")]
 
     sensor_stats = pd.DataFrame(
@@ -517,6 +466,8 @@ def main() -> None:
 
     print(sensor_stats)
 
+
+def select_a_few_high_value_sensors() -> None:
     selected_sensors = ["sensor_2", "sensor_3", "sensor_14", "sensor_15"]
 
     X_seq, y_seq = make_multivariate_sequences(df, selected_sensors)
@@ -531,8 +482,12 @@ def main() -> None:
 
     model.add(Dense(1, activation="sigmoid"))
 
-    _train_torch(model, X_train, y_train)
+    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
 
+    model.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+
+
+def load_dataset() -> None:
     df = pd.read_csv("train_FD001.txt", sep="\\s+", header=None)
 
     df.dropna(axis=1, inplace=True)
@@ -578,7 +533,9 @@ def main() -> None:
 
     model.add(Dense(1, activation="sigmoid"))
 
-    _train_torch(model, X_train, y_train)
+    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
+
+    model.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
 
     input_seq = Input(shape=(X_train.shape[1], X_train.shape[2]))
 
@@ -590,10 +547,16 @@ def main() -> None:
 
     model_attn = Model(inputs=input_seq, outputs=output)
 
-    _train_torch(model_attn, X_train, y_train)
+    model_attn.compile(
+        optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
+    )
+
+    model_attn.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
 
     predict_and_plot(model_attn, unit_id=3)
 
+
+def notebook_step_014() -> None:
     df = pd.read_csv("train_FD001.txt", sep="\\s+", header=None)
 
     df.dropna(axis=1, inplace=True)
@@ -657,10 +620,14 @@ def main() -> None:
 
     model.add(Dense(1, activation="sigmoid"))
 
-    _train_torch(model, X_train, y_train)
+    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
+
+    model.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
 
     predict_and_plot(model, unit_id=3)
 
+
+def define_attention_layer_that_returns_both_context() -> None:
     input_seq = Input(shape=(X_train.shape[1], X_train.shape[2]))
 
     x = LSTM(64, return_sequences=True)(input_seq)
@@ -671,7 +638,11 @@ def main() -> None:
 
     model_attn_vis = Model(inputs=input_seq, outputs=[output, attn_weights])
 
-    _train_torch(model_attn_vis, X_train, y_train)
+    model_attn_vis.compile(
+        optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
+    )
+
+    model_attn_vis.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
 
     unit_id = 3
 
@@ -687,7 +658,7 @@ def main() -> None:
 
     sample = X_unit[0:1]
 
-    pred, attn = _predict_torch(model_attn_vis, sample)
+    pred, attn = model_attn_vis.predict(sample)
 
     attn = attn[0].squeeze()
 
@@ -707,6 +678,8 @@ def main() -> None:
 
     plt.show()
 
+
+def create_pca_based_sequences() -> None:
     pca_cols = ["pca_1", "pca_2", "pca_3"]
 
     X, y = make_pca_lstm_sequences(df, pca_cols)
@@ -721,7 +694,11 @@ def main() -> None:
 
     model_plain.add(Dense(1, activation="sigmoid"))
 
-    _train_torch(model_plain, X_train, y_train)
+    model_plain.compile(
+        optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
+    )
+
+    model_plain.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
 
     unit_id = 3
 
@@ -738,7 +715,7 @@ def main() -> None:
 
     cycles = engine_data["time"].values[window:]
 
-    preds_plain = _predict_torch(model_plain, X_engine).flatten()
+    preds_plain = model_plain.predict(X_engine).flatten()
 
     plt.figure(figsize=(10, 4))
 
@@ -762,6 +739,8 @@ def main() -> None:
 
     plt.show()
 
+
+def predictive_maintenance_py() -> None:
     df = pd.read_csv("train_FD001.txt", sep="\\s+", header=None)
 
     df.dropna(axis=1, inplace=True)
@@ -839,7 +818,7 @@ def main() -> None:
 
     fit = model.fit()
 
-    forecast = _predict_torch(fit, start=1, end=len(unit_df), dynamic=False)
+    forecast = fit.predict(start=1, end=len(unit_df), dynamic=False)
 
     residuals = unit_df["pca_1"].iloc[1:].values - forecast[1:]
 
@@ -883,7 +862,7 @@ def main() -> None:
 
     rf_clf = RandomForestClassifier(n_estimators=100)
 
-    _train_torch(rf_clf, X_train_rf, y_train_rf)
+    rf_clf.fit(X_train_rf, y_train_rf)
 
     pca_cols = ["pca_1", "pca_2", "pca_3"]
 
@@ -899,7 +878,11 @@ def main() -> None:
 
     model_lstm.add(Dense(1, activation="sigmoid"))
 
-    _train_torch(model_lstm, X_train, y_train)
+    model_lstm.compile(
+        optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
+    )
+
+    model_lstm.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
 
     input_seq = Input(shape=(X.shape[1], X.shape[2]))
 
@@ -911,10 +894,16 @@ def main() -> None:
 
     model_attn = Model(inputs=input_seq, outputs=[output, attn_weights])
 
-    _train_torch(model_attn, X_train, y_train)
+    model_attn.compile(
+        optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
+    )
+
+    model_attn.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
 
     print("Training complete. All models and visualizations are ready.")
 
+
+def predictive_maintenance_py_2() -> None:
     df = pd.read_csv("train_FD001.txt", sep="\\s+", header=None)
 
     df.dropna(axis=1, inplace=True)
@@ -992,7 +981,7 @@ def main() -> None:
 
     fit = model.fit()
 
-    forecast = _predict_torch(fit, start=1, end=len(unit_df), dynamic=False)
+    forecast = fit.predict(start=1, end=len(unit_df), dynamic=False)
 
     residuals = unit_df["pca_1"].iloc[1:].values - forecast[1:]
 
@@ -1036,7 +1025,7 @@ def main() -> None:
 
     rf_clf = RandomForestClassifier(n_estimators=100)
 
-    _train_torch(rf_clf, X_train_rf, y_train_rf)
+    rf_clf.fit(X_train_rf, y_train_rf)
 
     y_pred_rf = rf_clf.predict_proba(X_test_rf)[:, 1]
 
@@ -1068,9 +1057,13 @@ def main() -> None:
 
     model_lstm.add(Dense(1, activation="sigmoid"))
 
-    _train_torch(model_lstm, X_train, y_train)
+    model_lstm.compile(
+        optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
+    )
 
-    pred_lstm = _predict_torch(model_lstm, X_test).flatten()
+    model_lstm.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+
+    pred_lstm = model_lstm.predict(X_test).flatten()
 
     plt.figure(figsize=(8, 4))
 
@@ -1096,9 +1089,17 @@ def main() -> None:
 
     model_attn = Model(inputs=input_seq, outputs={"pred": output, "attn": attn_weights})
 
-    _train_torch(model_attn, X_train, {"pred": y_train})
+    model_attn.compile(
+        optimizer="adam",
+        loss={"pred": "binary_crossentropy"},
+        metrics={"pred": "accuracy"},
+    )
 
-    pred_dict = _predict_torch(model_attn, X_test)
+    model_attn.fit(
+        X_train, {"pred": y_train}, epochs=10, batch_size=32, validation_split=0.1
+    )
+
+    pred_dict = model_attn.predict(X_test)
 
     pred_attn = pred_dict["pred"]
 
@@ -1120,6 +1121,8 @@ def main() -> None:
 
     print("Training complete. All models and visualizations are ready.")
 
+
+def for_a_specific_engine() -> None:
     unit_id = 3
 
     unit_data = df[df["unit"] == unit_id].copy()
@@ -1130,12 +1133,14 @@ def main() -> None:
 
     cycles = unit_data["time"].values[30:]
 
-    preds_plain = _predict_torch(model_lstm, X_unit).flatten()
+    preds_plain = model_lstm.predict(X_unit).flatten()
 
-    preds_dict = _predict_torch(model_attn, X_unit)
+    preds_dict = model_attn.predict(X_unit)
 
     preds_attn = preds_dict["pred"].flatten()
 
+
+def lstm() -> None:
     plt.figure(figsize=(10, 4))
 
     plt.plot(cycles, preds_plain, label="LSTM")
@@ -1180,6 +1185,8 @@ def main() -> None:
 
     plt.show()
 
+
+def notebook_step_021() -> None:
     plt.figure(figsize=(10, 4))
 
     plt.plot(cycles, preds_plain, label="LSTM")
@@ -1204,6 +1211,8 @@ def main() -> None:
 
     plt.show()
 
+
+def predictive_maintenance_py_3() -> None:
     plt.rcParams.update(
         {
             "font.family": "serif",
@@ -1298,7 +1307,7 @@ def main() -> None:
 
     fit = model.fit()
 
-    forecast = _predict_torch(fit, start=1, end=len(unit_df), dynamic=False)
+    forecast = fit.predict(start=1, end=len(unit_df), dynamic=False)
 
     residuals = unit_df["pca_1"].iloc[1:].values - forecast[1:]
 
@@ -1342,7 +1351,7 @@ def main() -> None:
 
     rf_clf = RandomForestClassifier(n_estimators=100)
 
-    _train_torch(rf_clf, X_train_rf, y_train_rf)
+    rf_clf.fit(X_train_rf, y_train_rf)
 
     y_pred_rf = rf_clf.predict_proba(X_test_rf)[:, 1]
 
@@ -1374,9 +1383,13 @@ def main() -> None:
 
     model_lstm.add(Dense(1, activation="sigmoid"))
 
-    _train_torch(model_lstm, X_train, y_train)
+    model_lstm.compile(
+        optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"]
+    )
 
-    pred_lstm = _predict_torch(model_lstm, X_test).flatten()
+    model_lstm.fit(X_train, y_train, epochs=10, batch_size=32, validation_split=0.1)
+
+    pred_lstm = model_lstm.predict(X_test).flatten()
 
     plt.figure(figsize=(8, 4))
 
@@ -1402,7 +1415,15 @@ def main() -> None:
 
     model_attn = Model(inputs=input_seq, outputs={"pred": output, "attn": attn_weights})
 
-    _train_torch(model_attn, X_train, {"pred": y_train})
+    model_attn.compile(
+        optimizer="adam",
+        loss={"pred": "binary_crossentropy"},
+        metrics={"pred": "accuracy"},
+    )
+
+    model_attn.fit(
+        X_train, {"pred": y_train}, epochs=10, batch_size=32, validation_split=0.1
+    )
 
     unit_id = 3
 
@@ -1419,9 +1440,9 @@ def main() -> None:
 
     cycles = engine_data["time"].values[window:]
 
-    pred_lstm_engine = _predict_torch(model_lstm, X_engine).flatten()
+    pred_lstm_engine = model_lstm.predict(X_engine).flatten()
 
-    pred_dict = _predict_torch(model_attn, X_engine)
+    pred_dict = model_attn.predict(X_engine)
 
     pred_attn_engine = pred_dict["pred"].flatten()
 
@@ -1489,6 +1510,8 @@ def main() -> None:
 
     print("Engine-specific visualizations complete.")
 
+
+def notebook_step_023() -> None:
     healthy_df = df[df["time"] <= 30]
 
     X_pca = healthy_df[["pca_1", "pca_2"]].values
@@ -1517,6 +1540,8 @@ def main() -> None:
 
     plt.close()
 
+
+def notebook_step_024() -> None:
     input_seq = Input(shape=(X_lstm.shape[1], 1))
 
     x = LSTM(64, return_sequences=True)(input_seq)
@@ -1529,7 +1554,7 @@ def main() -> None:
 
     sample = X_lstm[0:1]
 
-    pred, attn = _predict_torch(model_attn_vis, sample)
+    pred, attn = model_attn_vis.predict(sample)
 
     attn = attn[0].squeeze()
 
@@ -1547,6 +1572,8 @@ def main() -> None:
 
     plt.show()
 
+
+def pseudo_code_for_llm_interaction() -> None:
     prompt = "\nYou are looking at a time series forecasting model for sensor_9 from a jet engine.\nThe model starts to deviate significantly from actual values after cycle 150.\nWhat might cause this, and what could you try to improve it?\n"
 
     response = openai.ChatCompletion.create(
@@ -1554,6 +1581,33 @@ def main() -> None:
     )
 
     print(response["choices"][0]["message"]["content"])
+
+
+def main() -> None:
+    we_define_the_first_30_cycles_of_every_engine_as()
+    rebuild_lstm_sequences_from_this_engine()
+    notebook_step_004()
+    notebook_step_005()
+    notebook_step_006()
+    sort_descending_by_prediction_range()
+    notebook_step_008()
+    look_for_units_with_meaningful_prediction_moveme()
+    notebook_step_010()
+    make_sure_you_re_only_looking_at_the_sensor_colu()
+    select_a_few_high_value_sensors()
+    load_dataset()
+    notebook_step_014()
+    define_attention_layer_that_returns_both_context()
+    create_pca_based_sequences()
+    predictive_maintenance_py()
+    predictive_maintenance_py_2()
+    for_a_specific_engine()
+    lstm()
+    notebook_step_021()
+    predictive_maintenance_py_3()
+    notebook_step_023()
+    notebook_step_024()
+    pseudo_code_for_llm_interaction()
 
 
 if __name__ == "__main__":

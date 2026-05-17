@@ -22,6 +22,7 @@ def main():
     # Model inference
     # Alert generation
     # Dashboard visualization
+    pass
 
 
 if __name__ == "__main__":
