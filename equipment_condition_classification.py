@@ -33,19 +33,13 @@ def main():
     print("Accuracy", round(acc, 2))
 
 
-def main() -> None:
+def main_alt() -> None:
     mpl.rcParams["font.family"] = "serif"
-
     mpl.rcParams["axes.spines.top"] = False
-
     mpl.rcParams["axes.spines.right"] = False
-
     mpl.rcParams["figure.dpi"] = 120
-
     X = torch.rand(100, 1, 16, 16)
-
-    y = (X.mean(dim=(1, 2, 3)) > 0.5).long()
-
+    (X.mean(dim=(1, 2, 3)) > 0.5).long()
     main()
 
 

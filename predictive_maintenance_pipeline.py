@@ -124,7 +124,7 @@ def run_full_pipeline(file_path):
     y_regression = df.groupby("unit_number")["RUL"].first().values
     y_classification = df.groupby("unit_number")["health_state"].first().values
     df = prepare_corn_labels(df)
-    y_ordinal = df.groupby("unit_number")["ordinal_label"].first().values
+    df.groupby("unit_number")["ordinal_label"].first().values
     survival_df = prepare_survival_labels(df)
     X_train, X_test, y_train_reg, y_test_reg = train_test_split(
         X, y_regression, test_size=0.2, random_state=42
@@ -143,7 +143,7 @@ def run_full_pipeline(file_path):
     c, scale = fit_weibull(failure_times)
     plot_weibull_survival(c, scale)
     print("Fitting survival Weibull model with lifelines...")
-    wf_model = fit_weibull_survival(survival_df)
+    fit_weibull_survival(survival_df)
     print("Pipeline complete!")
 
 

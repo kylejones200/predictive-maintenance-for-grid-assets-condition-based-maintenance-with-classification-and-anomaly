@@ -2,17 +2,7 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import statsmodels.api as sm
-import tensorflow as tf
-from scipy.spatial.distance import cdist
-from sklearn.decomposition import PCA
-from sklearn.ensemble import IsolationForest, RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.layers import LSTM, Dense, Input, Layer
-from tensorflow.keras.models import Model, Sequential
-from tqdm import tqdm
+
 
 def predict_and_plot(model, unit_id=3, window=30):
     unit_data = df[df["unit"] == unit_id].copy()
@@ -30,4 +20,3 @@ def predict_and_plot(model, unit_id=3, window=30):
     plt.legend()
     plt.grid(True)
     plt.show()
-

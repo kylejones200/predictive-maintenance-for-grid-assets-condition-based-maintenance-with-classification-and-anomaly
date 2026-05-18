@@ -16,6 +16,8 @@ import torch
 import torch.nn as nn
 from sklearn import preprocessing
 from sklearn.decomposition import PCA
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.models import Sequential
 from torch.utils.data import DataLoader, TensorDataset
 
 
@@ -128,61 +130,37 @@ def md_threshold(dist: np.ndarray, extreme: bool = False) -> float:
 
 def pca_mahalanobis(dataset_test, dataset_train) -> None:
     scaler = preprocessing.MinMaxScaler()
-
     x_train = pd.DataFrame(
         scaler.fit_transform(dataset_train),
         columns=dataset_train.columns,
         index=dataset_train.index,
     )
-
     x_test = pd.DataFrame(
         scaler.transform(dataset_test),
         columns=dataset_test.columns,
         index=dataset_test.index,
     )
-
     pca = PCA(n_components=2, svd_solver="full")
-
     x_train_pca = pd.DataFrame(pca.fit_transform(x_train), index=x_train.index)
-
     x_test_pca = pd.DataFrame(pca.transform(x_test), index=x_test.index)
-
     data_train = np.asarray(x_train_pca.values, dtype=float)
-
     data_test = np.asarray(x_test_pca.values, dtype=float)
-
     _, inv_cov_matrix = compute_covariance_matrices(data_train)
-
     mean_distr = data_train.mean(axis=0)
-
-    dist_test = mahalanobis_distances(inv_cov_matrix, mean_distr, data_test)
-
+    mahalanobis_distances(inv_cov_matrix, mean_distr, data_test)
     dist_train = mahalanobis_distances(inv_cov_matrix, mean_distr, data_train)
-
-    threshold = md_threshold(dist_train, extreme=True)
-
+    md_threshold(dist_train, extreme=True)
     plt.figure()
-
     sns.histplot(np.square(dist_train), bins=10, kde=False)
-
     plt.xlim(0.0, 15)
-
     plt.title("Squared Mahalanobis distance (train)")
-
     plt.tight_layout()
-
     plt.show()
-
     plt.figure()
-
     sns.histplot(dist_train, bins=10, kde=True, color="green")
-
     plt.xlim(0.0, 5)
-
     plt.xlabel("Mahalanobis distance")
-
     plt.tight_layout()
-
     plt.show()
 
 
@@ -197,34 +175,24 @@ def prepare_anomaly_train(
         },
         index=x_train_pca.index,
     )
-
     anomaly_test = pd.DataFrame(
         {"Mob dist": dist_test, "Thresh": threshold, "Anomaly": dist_test > threshold},
         index=x_test_pca.index,
     )
-
     print(anomaly_test.head())
-
     anomaly_alldata = anomaly_train.append(anomaly_test)
-
     anomaly_alldata.to_csv(root / "Anomaly_distance.csv")
-
     anomaly_alldata.plot(
         logy=True, figsize=(10, 6), ylim=[0.1, 1000.0], color=["green", "red"]
     )
-
     plt.title("Mahalanobis anomaly scores")
-
     plt.tight_layout()
-
     plt.show()
 
 
 def prepare_act_func(x_train) -> None:
     act_func = "elu"
-
     n_features = x_train.shape[1]
-
     model = Sequential(
         [
             Dense(
@@ -239,11 +207,8 @@ def prepare_act_func(x_train) -> None:
             Dense(n_features, kernel_initializer="glorot_uniform"),
         ]
     )
-
     num_epochs = 100
-
     batch_size = 10
-
     history = _train_torch(
         model,
         np.asarray(x_train, y_train),
@@ -253,43 +218,26 @@ def prepare_act_func(x_train) -> None:
         validation_split=0.05,
         verbose=1,
     )
-
     plt.plot(history.history["loss"], "b", label="Training loss")
-
     plt.plot(history.history["val_loss"], "r", label="Validation loss")
-
     plt.legend(loc="upper right")
-
     plt.xlabel("Epochs")
-
     plt.ylabel("Loss (MSE)")
-
     plt.ylim(0, 0.02)
-
     plt.tight_layout()
-
     plt.show()
-
     x_pred_train = pd.DataFrame(
         _predict_torch(model, np.asarray(x_train), verbose=0),
         columns=x_train.columns,
         index=x_train.index,
     )
-
     scored_train = pd.DataFrame(index=x_train.index)
-
     scored_train["Loss_mae"] = np.mean(np.abs(x_pred_train - x_train), axis=1)
-
     plt.figure()
-
     sns.histplot(scored_train["Loss_mae"], bins=10, kde=True, color="blue")
-
     plt.xlim(0.0, 0.5)
-
     plt.title("Train reconstruction MAE")
-
     plt.tight_layout()
-
     plt.show()
 
 
@@ -299,61 +247,36 @@ def prepare_x_pred_test(model, scored_train, x_test) -> None:
         columns=x_test.columns,
         index=x_test.index,
     )
-
     scored_test = pd.DataFrame(index=x_test.index)
-
     scored_test["Loss_mae"] = np.mean(np.abs(x_pred_test - x_test), axis=1)
-
     scored_test["Threshold"] = 0.3
-
     scored_test["Anomaly"] = scored_test["Loss_mae"] > scored_test["Threshold"]
-
     print(scored_test.head())
-
     scored_train["Threshold"] = 0.3
-
     scored_train["Anomaly"] = scored_train["Loss_mae"] > scored_train["Threshold"]
-
     scored_ae = scored_train.append(scored_test)
-
     scored_ae.plot(
         logy=True, figsize=(10, 6), ylim=[0.01, 100.0], color=["blue", "red"]
     )
-
     plt.title("Autoencoder reconstruction MAE vs threshold")
-
     plt.tight_layout()
-
     plt.show()
 
 
 def main() -> None:
     sns.set(color_codes=True)
-
     root = Path(__file__).resolve().parent
-
     csv_path = root / "ranfle.csv"
-
     np.random.seed(10)
-
     torch.manual_seed(10)
-
     df = load_frame(csv_path)
-
     print(df.head())
-
     cut_point = "2018-06-11 20:18:00"
-
     dataset_train = df.loc[:cut_point]
-
     dataset_test = df.loc[cut_point:]
-
     dataset_train.plot(figsize=(12, 6))
-
     plt.title("Train segment")
-
     plt.tight_layout()
-
     plt.show()
     pca_mahalanobis(dataset_test, dataset_train)
     prepare_anomaly_train(

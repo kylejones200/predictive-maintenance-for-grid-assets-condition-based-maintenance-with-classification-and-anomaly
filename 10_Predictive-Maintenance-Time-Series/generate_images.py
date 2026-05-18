@@ -3,9 +3,6 @@
 Generated script to create Tufte-style visualizations
 """
 
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
 import logging
 from pathlib import Path
 

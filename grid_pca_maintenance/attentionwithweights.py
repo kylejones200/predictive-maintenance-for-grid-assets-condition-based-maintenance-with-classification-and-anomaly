@@ -1,18 +1,8 @@
 """Auto-split from legacy monolithic script."""
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import statsmodels.api as sm
 import tensorflow as tf
-from scipy.spatial.distance import cdist
-from sklearn.decomposition import PCA
-from sklearn.ensemble import IsolationForest, RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.layers import LSTM, Dense, Input, Layer
-from tensorflow.keras.models import Model, Sequential
-from tqdm import tqdm
+from tensorflow.keras.layers import Layer
+
 
 class AttentionWithWeights(Layer):
     def build(self, input_shape):
@@ -25,4 +15,3 @@ class AttentionWithWeights(Layer):
         weights = tf.nn.softmax(scores, axis=1)
         output = tf.reduce_sum(inputs * weights, axis=1)
         return (output, weights)
-
