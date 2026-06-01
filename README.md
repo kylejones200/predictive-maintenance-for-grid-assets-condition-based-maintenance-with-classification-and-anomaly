@@ -11,14 +11,32 @@ This approach is costly and inefficient. Unplanned failures disrupt service, tri
 
 The challenge lies in predicting failures before they happen and targeting maintenance only where it is needed. Doing so requires leveraging data from sensors, inspection logs, and operational histories to assess asset health dynamically, rather than relying on static schedules. This is where predictive maintenance comes in.
 
-## About
 
-Place the code for this article in this repository.
-The original article export is saved as `article.md`.
 
-## Files
+## Rust performance port
 
-Add your `.ipynb`, `.py`, `.yaml`, `.js`, `.ts`, or other project files here.
+Side-by-side **Python vs Rust** implementation of the numeric hot loop — rolling RMS features. Reference PyO3 benchmark: **see `benchmark_rust.py`** on a release build (local machine; run `benchmark_rust.py` to reproduce).
+
+| Path | Role |
+|------|------|
+| `src/compute_kernel.py` | Python/numpy reference kernel |
+| `rust/core/` | Pure Rust library |
+| `rust/py/` | PyO3 bindings |
+| `rust/bench/` | Standalone CLI benchmark |
+| `benchmark_rust.py` | Python vs Rust timing + correctness check |
+
+```bash
+# Rust-only CLI benchmark
+cd rust && cargo run --release -p predictive_maintenance_for_grid_assets_condition_based_maintenance_with_classification_and_anomaly_bench
+
+# Python vs Rust (PyO3)
+pip install maturin numpy
+maturin develop --release -m rust/py/Cargo.toml
+python benchmark_rust.py
+```
+
+Python ML training, solvers, and orchestration stay in Python; Rust targets the numeric hot loops. Stochastic generators validate output shapes; deterministic kernels match at tight floating-point tolerance.
+
 
 ## Disclaimer
 

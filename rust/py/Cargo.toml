@@ -1,0 +1,15 @@
+[package]
+name = "predictive_maintenance_for_grid_assets_condition_based_maintenance_with_classification_and_anomaly_rs"
+description = "Python bindings (PyO3) for predictive_maintenance_for_grid_assets_condition_based_maintenance_with_classification_and_anomaly_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "predictive_maintenance_for_grid_assets_condition_based_maintenance_with_classification_and_anomaly_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+predictive_maintenance_for_grid_assets_condition_based_maintenance_with_classification_and_anomaly_core = { path = "../core" }
+pyo3 = { version = "0.28", features = ["extension-module"] }
+numpy = "0.28"

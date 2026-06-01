@@ -1,0 +1,13 @@
+[package]
+name = "predictive_maintenance_for_grid_assets_condition_based_maintenance_with_classification_and_anomaly_bench"
+description = "Standalone Rust benchmark (no Python)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "bench"
+path = "src/main.rs"
+
+[dependencies]
+predictive_maintenance_for_grid_assets_condition_based_maintenance_with_classification_and_anomaly_core = { path = "../core" }

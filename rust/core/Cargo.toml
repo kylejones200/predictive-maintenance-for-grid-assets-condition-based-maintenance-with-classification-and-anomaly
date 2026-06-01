@@ -1,0 +1,9 @@
+[package]
+name = "predictive_maintenance_for_grid_assets_condition_based_maintenance_with_classification_and_anomaly_core"
+description = "Rolling RMS feature for predictive maintenance signals"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"

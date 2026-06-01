@@ -1,6 +1,4 @@
-"""Generated from Jupyter notebook: Equipment Condition Classification
-
-Magics and shell lines are commented out. Run with a normal Python interpreter."""
+"""Generated from Jupyter notebook: Equipment Condition Classification"""
 
 import matplotlib as mpl
 import torch
@@ -20,6 +18,12 @@ class CNN(nn.Module):
 
 
 def main():
+    mpl.rcParams["font.family"] = "serif"
+    mpl.rcParams["axes.spines.top"] = False
+    mpl.rcParams["axes.spines.right"] = False
+    mpl.rcParams["figure.dpi"] = 120
+    X = torch.rand(100, 1, 16, 16)
+    y = (X.mean(dim=(1, 2, 3)) > 0.5).long()
     m = CNN()
     opt = optim.Adam(m.parameters(), lr=0.001)
     loss_fn = nn.CrossEntropyLoss()
@@ -31,16 +35,6 @@ def main():
         opt.step()
     acc = (m(X).argmax(1) == y).float().mean().item()
     print("Accuracy", round(acc, 2))
-
-
-def main_alt() -> None:
-    mpl.rcParams["font.family"] = "serif"
-    mpl.rcParams["axes.spines.top"] = False
-    mpl.rcParams["axes.spines.right"] = False
-    mpl.rcParams["figure.dpi"] = 120
-    X = torch.rand(100, 1, 16, 16)
-    (X.mean(dim=(1, 2, 3)) > 0.5).long()
-    main()
 
 
 if __name__ == "__main__":
